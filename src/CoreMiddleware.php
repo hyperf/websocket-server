@@ -13,12 +13,7 @@ declare(strict_types=1);
 namespace Hyperf\WebSocketServer;
 
 use Hyperf\HttpServer\CoreMiddleware as HttpCoreMiddleware;
-use Psr\Http\Message\ServerRequestInterface;
 
 class CoreMiddleware extends HttpCoreMiddleware
 {
-    protected function handleFound(array $routes, ServerRequestInterface $request)
-    {
-        return parent::handleFound($routes, $request);
-    }
 }
