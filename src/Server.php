@@ -143,10 +143,15 @@ class Server implements MiddlewareInitializerInterface, OnHandShakeInterface, On
                 FdCollector::set($request->fd, $class);
 
                 defer(function () use ($request, $class) {
-                    $instance = $this->container->get($class);
-                    if ($instance instanceof OnOpenInterface) {
-                        $instance->onOpen($this->getServer(), $request);
+                    try {
+                        $instance = $this->container->get($class);
+                        if ($instance instanceof OnOpenInterface) {
+                            $instance->onOpen($this->getServer(), $request);
+                        }
+                    } catch (\Throwable $throwable) {
+                        $this->exceptionHandlerDispatcher->dispatch($throwable, $this->exceptionHandlers);
                     }
+
                 });
             }
         } catch (\Throwable $throwable) {
@@ -163,36 +168,44 @@ class Server implements MiddlewareInitializerInterface, OnHandShakeInterface, On
 
     public function onMessage(WebSocketServer $server, Frame $frame): void
     {
-        $fdObj = FdCollector::get($frame->fd);
-        if (! $fdObj) {
-            $this->logger->warning(sprintf('WebSocket: fd[%d] does not exist.', $frame->fd));
-            return;
+        try {
+            $fdObj = FdCollector::get($frame->fd);
+            if (! $fdObj) {
+                $this->logger->warning(sprintf('WebSocket: fd[%d] does not exist.', $frame->fd));
+                return;
+            }
+            $instance = $this->container->get($fdObj->class);
+            if (! $instance instanceof OnMessageInterface) {
+                $this->logger->warning("{$instance} is not instanceof " . OnMessageInterface::class);
+                return;
+            }
+            $instance->onMessage($server, $frame);
+        } catch (\Throwable $throwable) {
+            $this->exceptionHandlerDispatcher->dispatch($throwable, $this->exceptionHandlers);
         }
 
-        $instance = $this->container->get($fdObj->class);
-
-        if (! $instance instanceof OnMessageInterface) {
-            $this->logger->warning("{$instance} is not instanceof " . OnMessageInterface::class);
-            return;
-        }
-
-        $instance->onMessage($server, $frame);
     }
 
     public function onClose(SwooleServer $server, int $fd, int $reactorId): void
     {
+
         $this->logger->debug(sprintf('WebSocket: fd[%d] closed.', $fd));
 
-        $fdObj = FdCollector::get($fd);
-        if (! $fdObj) {
-            return;
-        }
-        $instance = $this->container->get($fdObj->class);
-        if ($instance instanceof OnCloseInterface) {
-            $instance->onClose($server, $fd, $reactorId);
+        try {
+            $fdObj = FdCollector::get($fd);
+            if (! $fdObj) {
+                return;
+            }
+            $instance = $this->container->get($fdObj->class);
+            if ($instance instanceof OnCloseInterface) {
+                $instance->onClose($server, $fd, $reactorId);
+            }
+
+            FdCollector::del($fd);
+        } catch (\Throwable $throwable) {
+            $this->exceptionHandlerDispatcher->dispatch($throwable, $this->exceptionHandlers);
         }
 
-        FdCollector::del($fd);
     }
 
     /**
